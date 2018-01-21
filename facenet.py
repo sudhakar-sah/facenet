@@ -11,7 +11,12 @@ from keras.layers.pooling import MaxPooling2D, AveragePooling2D
 from keras.layers.core import Lambda, Flatten, Dense
 
 from termcolor import colored
+from system_conf import gpu_conf
+import h5py 
 
+
+gpu_conf(gpu_id =0, 
+			 load = 0.1)
 
 data_format = 'channels_first'
 
@@ -436,9 +441,10 @@ def create_weights_dict(model):
 			print colored('conv :' + name, "cyan")
 			conv_w = genfromtxt(paths[name + '_w'], delimiter=',', dtype=None)
 			conv_w = np.reshape(conv_w, conv_shape[name])
+			conv_w = np.transpose(conv_w, (2, 3, 1, 0))
 			print colored(conv_shape[name], "cyan")
 			conv_b = genfromtxt(paths[name + '_b'], delimiter=',', dtype=None)
-			weights_dict[name] = [conv_w.T, conv_b]
+			weights_dict[name] = [conv_w, conv_b]
 
 		elif 'bn' in name:
 
@@ -458,7 +464,7 @@ def create_weights_dict(model):
 			dense_w = np.transpose(dense_w, (1, 0))
 			print colored(conv_shape[name], "red")
 			dense_b = genfromtxt(paths[name + '_b'], delimiter=',', dtype=None)
-			weights_dict[name] = [dense_w.T, dense_b]
+			weights_dict[name] = [dense_w, dense_b]
 
 
 	return weights_dict
@@ -491,4 +497,95 @@ def save_weights_ptm(model, weight_dict, weights_file= "facenet_ptm.h5"):
 	model.save_weights(weights_file)
 
 save_weights_ptm(model, weight_dict)
+
+
+def load_dataset():
+
+	# (u'list_classes', <HDF5 dataset "list_classes": shape (2,), type "<i8">)
+	# (u'train_set_x', <HDF5 dataset "train_set_x": shape (600, 64, 64, 3), type "|u1">)
+	# (u'train_set_y', <HDF5 dataset "train_set_y": shape (600,), type "<i8">)
+
+
+	train_dataset = h5py.File('dataset/train_happy.h5', "r")
+	train_set_x_orig = np.array(train_dataset["train_set_x"][:]) # shape (600,64,64,3)
+	train_set_y_orig = np.array(train_dataset["train_set_y"][:])
+
+	test_dataset = h5py.File('dataset/test_happy.h5', "r")
+	test_set_x_orig = np.array(test_dataset["test_set_x"][:])
+	test_set_y_orig = np.array(test_dataset["test_set_y"][:])
+
+	classes = np.array(test_dataset["list_classes"][:])
+
+
+	train_set_y_orig = train_set_y_orig.reshape(1,train_set_y_orig.shape[0]) # add the batch
+	test_set_y_orig = test_set_y_orig.reshape(1, test_set_y_orig.shape[0]) # add the batch size 
+
+	return train_set_x_orig, train_set_y_orig, test_set_x_orig, test_set_y_orig
+
+
+train_x, train_y, test_x, test_y = load_dataset()
+
+
+
+# load_weight
+
+model.load_weights("./facenet_ptm.h5", by_name = True)
+print colored("pre-traind weights loaded", "green")
+model.save("facenet_model_weight_defn.h5")
+print colored("face recognition model and definition saved ")
+
+from keras.models import load_model
+
+print ("loading pre-trained face recognition model")
+load_model("facenet_model_weight_defn.h5")
+
+
+import cv2
+def img_to_encoding(img_path, model):
+
+	img = cv2.imread(img_path, 1) # BGR
+	img = img[:,:,::-1] # BGR->RGB 
+	img = np.around(np.transpose(img, (2,0,1)) / 255.0, decimals=12) # hxwxch -> chxhxw -> normalization 
+	x_train = np.array([img])
+
+	embedding = model.predict_on_batch(x_train)
+
+	return embedding 
+
+
+database = {}
+database["danielle"] = img_to_encoding("./images/danielle.png", model)
+database["younes"] = img_to_encoding("./images/younes.jpg", FRmodel)
+database["tian"] = img_to_encoding("./images/tian.jpg", FRmodel)
+database["andrew"] = img_to_encoding("./images/andrew.jpg", FRmodel)
+database["kian"] = img_to_encoding("./images/kian.jpg", FRmodel)
+database["dan"] = img_to_encoding("./images/dan.jpg", FRmodel)
+database["sebastiano"] = img_to_encoding("./images/sebastiano.jpg", FRmodel)
+database["bertrand"] = img_to_encoding("./images/bertrand.jpg", FRmodel)
+database["kevin"] = img_to_encoding("./images/kevin.jpg", FRmodel)
+database["felix"] = img_to_encoding("./images/felix.jpg", FRmodel)
+database["benoit"] = img_to_encoding("./images/benoit.jpg", FRmodel)
+database["arnaud"] = img_to_encoding("./images/arnaud.jpg", FRmodel)
+
+
+
+def verify(img_path, identity, database, model):
+
+	embedding = img_to_encoding(img_path, model)
+
+	dist = np.linalg.norm(embedding - database[identity])
+
+	if dist < 0.7:
+		print("It's " + str(identity) + ", welcome home")
+
+	else:
+		print("Identity verification failed, not  " + str(identity) + ", gate closed")
+	
+	return dist
+
+
+dist = verify("./images/arnaud.jpg", "arnaud", database, model)
+
+print dist
+
 
