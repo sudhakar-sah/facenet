@@ -526,6 +526,43 @@ def load_dataset():
 train_x, train_y, test_x, test_y = load_dataset()
 
 
+# this function defines the triplet loss as defined in the facenet paper
+
+def triplet_loss(y_true, y_pred, alpha = 0.2):
+
+  anchor, positive, negative = y_pred[0], y_pred[1], y_pred[2]
+
+  # computing the distance between anchor and positive 
+  pos_distance = tf.square(anchor-positive)
+  # computer the distance between anchor and negative 
+  neg_distance = tf.square(anchor-negative)
+
+  # subtract two distances and add alpha 
+  basic_loss = tf.reduce_sum(pos_distance - neg_distance) + alpha
+
+  # take the maximum of basic loss and 0.0 and sum over training examples   
+  # loss = tf.reduce_sum(tf.maximum(basic_loss, 0.))
+
+  loss = tf.reduce_sum(tf.maximum(basic_loss, 0.0))
+
+  return loss 
+
+
+# testing triplelet loss 
+
+with tf.Session() as test:
+  tf.set_random_seed(1)
+
+  y_true = (None, None, None)
+  y_pred = (tf.random_normal([3,128], mean = 6, stddev = 0.1, seed = 1), 
+            tf.random_normal([3,128], mean = 1, stddev = 1, seed = 1), 
+            tf.random_normal([3,128], mean = 3, stddev = 4, seed = 1)) 
+  
+  loss = triplet_loss(y_true, y_pred)
+
+  print ("loss : " + str(loss.eval()))
+
+
 
 # load_weight
 
@@ -537,7 +574,9 @@ print colored("face recognition model and definition saved ")
 from keras.models import load_model
 
 print ("loading pre-trained face recognition model")
-load_model("facenet_model_weight_defn.h5")
+model = load_model("facenet_model_weight_defn.h5")
+
+model.compile(optimizer = 'adam', loss = triplet_loss, metrics = ['accuracy'])
 
 
 import cv2
@@ -555,19 +594,39 @@ def img_to_encoding(img_path, model):
 
 database = {}
 database["danielle"] = img_to_encoding("./images/danielle.png", model)
-database["younes"] = img_to_encoding("./images/younes.jpg", FRmodel)
-database["tian"] = img_to_encoding("./images/tian.jpg", FRmodel)
-database["andrew"] = img_to_encoding("./images/andrew.jpg", FRmodel)
-database["kian"] = img_to_encoding("./images/kian.jpg", FRmodel)
-database["dan"] = img_to_encoding("./images/dan.jpg", FRmodel)
-database["sebastiano"] = img_to_encoding("./images/sebastiano.jpg", FRmodel)
-database["bertrand"] = img_to_encoding("./images/bertrand.jpg", FRmodel)
-database["kevin"] = img_to_encoding("./images/kevin.jpg", FRmodel)
-database["felix"] = img_to_encoding("./images/felix.jpg", FRmodel)
-database["benoit"] = img_to_encoding("./images/benoit.jpg", FRmodel)
-database["arnaud"] = img_to_encoding("./images/arnaud.jpg", FRmodel)
+database["younes"] = img_to_encoding("./images/younes.jpg", model)
+database["tian"] = img_to_encoding("./images/tian.jpg", model)
+database["andrew"] = img_to_encoding("./images/andrew.jpg", model)
+database["kian"] = img_to_encoding("./images/kian.jpg", model)
+database["dan"] = img_to_encoding("./images/dan.jpg", model)
+database["sebastiano"] = img_to_encoding("./images/sebastiano.jpg", model)
+database["bertrand"] = img_to_encoding("./images/bertrand.jpg", model)
+database["kevin"] = img_to_encoding("./images/kevin.jpg", model)
+database["felix"] = img_to_encoding("./images/felix.jpg", model)
+database["benoit"] = img_to_encoding("./images/benoit.jpg", model)
+database["arnaud"] = img_to_encoding("./images/arnaud.jpg", model)
 
 
+np.set_printoptions(precision=2) 
+
+def confusion_matrix_compute(database):
+
+	confusion_matrix = np.zeros((len(database), len(database)))
+	col = 0
+	row = 0 
+	keys = [key for key in database]
+	for key in keys:
+		col =0 
+		for key1 in keys:
+			conf_value = np.linalg.norm(database[key] - database[key1])  
+
+
+			confusion_matrix[row][col] = conf_value
+			col +=1 
+		row +=1 
+	return confusion_matrix
+
+confusion_matrix = confusion_matrix_compute(database)
 
 def verify(img_path, identity, database, model):
 
@@ -587,5 +646,38 @@ def verify(img_path, identity, database, model):
 dist = verify("./images/arnaud.jpg", "arnaud", database, model)
 
 print dist
+
+
+def distance_calc(img1, img2, model):
+
+  embedding_img1 = img_to_encoding(img1, model)
+  embedding_img2 = img_to_encoding(img2, model)
+  distance = np.linalg.norm(embedding_img1 - embedding_img2)
+
+  return distance 
+
+def identify_person(img, database, model):
+
+  embedding = embedding = img_to_encoding(img, model)
+
+  min_dist = 2.0 
+  min_key = None
+  for key in database:
+    dist = np.linalg.norm(embedding - database[key])
+
+    if dist < min_dist:
+      min_dist = dist 
+      min_key = key
+
+
+  if(min_dist > 0.7 or min_key is None ):
+    print(colored("Not matching with any one in this database " + ":" + str(min_dist) , "red"))
+  else:
+    print(colored("Match found with : " + str(key) + ":" + str(min_dist)), "green")
+
+
+identify_person("images/camera_0.jpg", database, model)
+
+
 
 
